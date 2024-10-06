@@ -1,9 +1,16 @@
 # StencilBrushFromSdControlNet
 Blender plugin which creates stencil brush in texture painting mode using Stable Diffusion and control net depth model
+The plugin sends the current 3D view to the running SD instance. The 3D view is used as control net depth input to generate a new stencil brush for texture painting.
 
+## Prerequisites
+Running stable-diffusion-webui API with controlnet installed and depth model download.
+The script does not start stable-diffusion-webui, it just connects to the existing one.
+You will need to start the webui with --api for the script to be able to connect.
+## Installation
+In blender preferences in Add-ons tab chose "Install from Disk..." and navigate to "stencil_from_control_net.py" location and chose the "stencil_from_control_net.py" file 
 ## Features
-- Plugin sends current 3D view to running SD instance. Current 3D view is sent to ControlNet Unit as base and then is converted to stencil brush
-
+-  Create a stencil brush from the current view by sending the current view to SD txt2img
+-  Create a stencil brush from the current view by sending the current view to SD img2img
 ## How to Use
 1. In Texture Paint mode open "Brush From SD" tab.
 2. Set IP of running SD instance.
