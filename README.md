@@ -19,7 +19,7 @@ In blender preferences in Add-ons tab chose "Install from Disk..." and navigate 
 5. Press "Send to sd"
 
 ## Demo
-
-[tutorial_2.webm](https://github.com/user-attachments/assets/23d9097c-8309-432a-b212-736308e14b68)
-
-[tutorial_1.webm](https://github.com/user-attachments/assets/cabf03ec-2a7f-4d1c-8409-b2fb1d06b80d)
+Basic workflow example, after connecting to SD API, we get available models set the SD model and control net model then we generate first brush with txt2img and next brush with img2img
+[Toy Car.webm](https://github.com/user-attachments/assets/045fa68c-c8de-42b8-9da0-705c71c7b089)
+Second example, we create first brush with txt2img and next brushes with img2img
+[Castle Example.webm](https://github.com/user-attachments/assets/4c01a9f5-6a88-4535-aab9-72f38d84de24)
