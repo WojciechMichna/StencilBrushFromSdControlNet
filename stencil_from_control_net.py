@@ -34,17 +34,22 @@ class SdProperties(bpy.types.PropertyGroup):
         default=7860,
     )
     image_width: bpy.props.IntProperty(
-        name="image_width",
+        name="Image width",
         description="Image width",
         default=512,
     )
-
     image_height: bpy.props.IntProperty(
-        name="image_height",
+        name="Image height",
         description="Image height",
         default=512,
     )
-
+    denoising_strength: bpy.props.FloatProperty(
+        name="Denoising strength",
+        description="Denoising strength",
+        default=0.7,
+        min=0.0,
+        max=1.0,
+    )
     remove_tmp_files: bpy.props.BoolProperty(
         name="Remove tmp files", description="Remove temporary files", default=True
     )
@@ -135,8 +140,10 @@ class SendToControlNetOperator(bpy.types.Operator):
         print("New stencil brush created and set as active.")
 
     def send_request_to_sd(self, brush_tool, image_path):
-
-        url = f"http://{brush_tool.sd_api_ip}:{brush_tool.sd_api_port}/sdapi/v1/txt2img"
+        if "txt2img" in self.button_id:
+            url = f"http://{brush_tool.sd_api_ip}:{brush_tool.sd_api_port}/sdapi/v1/txt2img"
+        elif "img2img" in self.button_id:
+            url = f"http://{brush_tool.sd_api_ip}:{brush_tool.sd_api_port}/sdapi/v1/img2img"
 
         # Define the headers
         headers = {
@@ -168,7 +175,7 @@ class SendToControlNetOperator(bpy.types.Operator):
             "hr_upscaler": "",
             "hr_sampler_name": "DPM++ 2M",
             "hr_scale": 1.0,
-            "denoising_strength": 0.7,
+            "denoising_strength": brush_tool.denoising_strength,
             "hr_second_pass_steps": 15,
             "override_settings": {"sd_model_checkpoint": brush_tool.sd_model},
             "alwayson_scripts": {
@@ -201,6 +208,9 @@ class SendToControlNetOperator(bpy.types.Operator):
                 }
             },
         }
+
+        if "img2img" in self.button_id:
+            data["init_images"] = [base64_image]
 
         # Convert the data to JSON
         data_json = json.dumps(data).encode("utf-8")
@@ -266,10 +276,7 @@ class SendToControlNetOperator(bpy.types.Operator):
 
         return {"FINISHED"}
 
-    def create_brush_from_scene(self, context):
-        brush_tool = context.scene.control_net_brush_tool
-
-        # Set the output path for saving the image manually later
+    def get_viewport_capture(self):
         output_path = os.path.join(bpy.app.tempdir, "viewport_capture.png")
 
         for area in bpy.context.screen.areas:
@@ -284,29 +291,42 @@ class SendToControlNetOperator(bpy.types.Operator):
 
         # Access the 'Render Result' image
         render_result = bpy.data.images.get("Render Result")
-
         # Check if the image exists
         if render_result:
             # Save the image manually to the specified path
             render_result.save_render(filepath=output_path)
-            images = self.send_request_to_sd(brush_tool, output_path)
+            return output_path
+        else:
+            return None
+
+    def create_brush_from_scene(self, context):
+        brush_tool = context.scene.control_net_brush_tool
+
+        viewport_image_path = self.get_viewport_capture()
+        # Check if the image exists
+        if viewport_image_path is not None:
+            images = self.send_request_to_sd(brush_tool, viewport_image_path)
             if len(images) > 0:
                 if context.scene.control_net_brush_tool.remove_tmp_files:
-                    os.remove(output_path)
+                    os.remove(viewport_image_path)
                     if len(images) > 1:
                         os.remove(images[1])
                 else:
-                    print(f"file {output_path} not deleted")
+                    print(f"file {viewport_image_path} not deleted")
                     if len(images) > 1:
                         print(f"file {images[1]} not deleted")
                 self.create_brush(images[0])
                 self.report({"INFO"}, "Brush reated successfully.")
+            else:
+                print("Failed to get images from sd.")
+                self.report({"ERROR"}, "Failed to get images from sd.")
         else:
-            print("Render result not found.")
+            print("Failed to capture viewport.")
+            self.report({"ERROR"}, "Failed to capture viewport.")
         return {"FINISHED"}
 
     def execute(self, context):
-        if self.button_id == "create_brush":
+        if "create_brush" in self.button_id:
             return self.create_brush_from_scene(context)
         elif self.button_id == "get_models":
             return self.get_sd_models(context)
@@ -337,8 +357,11 @@ class SendToControlNetPanel(bpy.types.Panel):
         col.prop(brush_tool, "sd_negative_prompt")
         col.prop(brush_tool, "image_width")
         col.prop(brush_tool, "image_height")
-        op = col.operator("mesh.send_to_control_net", text="Send to sd")
-        op.button_id = "create_brush"
+        col.prop(brush_tool, "denoising_strength")
+        op = col.operator("mesh.send_to_control_net", text="Brush from txt2img")
+        op.button_id = "create_brush_txt2img"
+        op = col.operator("mesh.send_to_control_net", text="Brush from img2img")
+        op.button_id = "create_brush_img2img"
 
 
 # Register the classes
