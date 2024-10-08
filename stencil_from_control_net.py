@@ -1,6 +1,6 @@
 bl_info = {
     "name": "Stencil Brush from Depth ControlNet",
-    "blender": (4, 2, 2),
+    "blender": (4, 0, 0),
     "category": "Object",
     "version": (0, 0, 1),
     "author": "Wojciech Michna",
@@ -59,6 +59,11 @@ class SdProperties(bpy.types.PropertyGroup):
         name="available_controlnet_models"
     )
 
+    def update_brush_texture_alpha(self, context):
+        brush = context.tool_settings.image_paint.brush
+        brush.texture_overlay_alpha = self.overlay_alpha
+        bpy.context.area.tag_redraw()
+
     def sd_model_callback(self, context):
         items = []
         if len(self.available_sd_models) > 0:
@@ -98,6 +103,15 @@ class SdProperties(bpy.types.PropertyGroup):
         ],
     )
 
+    overlay_alpha: bpy.props.IntProperty(
+        name="Overlay Alpha",
+        description="Control the texture overlay opacity",
+        default=33,
+        min=0,
+        max=100,
+        update=update_brush_texture_alpha
+    )
+
 
 class SendToControlNetOperator(bpy.types.Operator):
     bl_idname = "mesh.send_to_control_net"
@@ -106,7 +120,7 @@ class SendToControlNetOperator(bpy.types.Operator):
 
     button_id: bpy.props.StringProperty()
 
-    def create_brush(self, image_path):
+    def create_brush(self, image_path, brush_tool):
         # Ensure the image file exists
         if not os.path.isfile(image_path):
             raise FileNotFoundError(f"Image file not found: {image_path}")
@@ -136,6 +150,11 @@ class SendToControlNetOperator(bpy.types.Operator):
             x = main_v3d.width / 2
             y = main_v3d.height / 2
             bpy.data.brushes[new_brush.name].stencil_pos.xy = x, y
+
+        # Change the opacity in the viewport
+        brush = bpy.context.tool_settings.image_paint.brush
+        brush.texture_overlay_alpha = brush_tool.overlay_alpha
+        bpy.context.area.tag_redraw()
 
         print("New stencil brush created and set as active.")
 
@@ -315,7 +334,7 @@ class SendToControlNetOperator(bpy.types.Operator):
                     print(f"file {viewport_image_path} not deleted")
                     if len(images) > 1:
                         print(f"file {images[1]} not deleted")
-                self.create_brush(images[0])
+                self.create_brush(images[0], brush_tool)
                 self.report({"INFO"}, "Brush reated successfully.")
             else:
                 print("Failed to get images from sd.")
@@ -362,6 +381,7 @@ class SendToControlNetPanel(bpy.types.Panel):
         op.button_id = "create_brush_txt2img"
         op = col.operator("mesh.send_to_control_net", text="Brush from img2img")
         op.button_id = "create_brush_img2img"
+        col.prop(brush_tool, "overlay_alpha")
 
 
 # Register the classes
