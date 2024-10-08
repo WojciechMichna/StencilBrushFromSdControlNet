@@ -318,6 +318,15 @@ class SendToControlNetOperator(bpy.types.Operator):
         else:
             return None
 
+    def set_texture_painting_mode(self):
+        if bpy.context.active_object is not None:
+            # Check if the object is a mesh
+            if bpy.context.active_object.type == 'MESH':
+                # Switch to Texture Paint mode
+                bpy.ops.object.mode_set(mode='TEXTURE_PAINT')
+            else:
+                print("Active object is not a mesh.")
+
     def create_brush_from_scene(self, context):
         brush_tool = context.scene.control_net_brush_tool
 
@@ -335,6 +344,7 @@ class SendToControlNetOperator(bpy.types.Operator):
                     if len(images) > 1:
                         print(f"file {images[1]} not deleted")
                 self.create_brush(images[0], brush_tool)
+                self.set_texture_painting_mode()
                 self.report({"INFO"}, "Brush reated successfully.")
             else:
                 print("Failed to get images from sd.")
