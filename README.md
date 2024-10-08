@@ -11,6 +11,7 @@ In blender preferences in Add-ons tab chose "Install from Disk..." and navigate 
 ## Features
 -  Create a stencil brush from the current view by sending the current view to SD txt2img
 -  Create a stencil brush from the current view by sending the current view to SD img2img
+-  Set opacity of stencil brush
 ## How to Use
 1. In Texture Paint mode open "Brush From SD" tab.
 2. Set IP of running SD instance.
@@ -19,6 +20,7 @@ In blender preferences in Add-ons tab chose "Install from Disk..." and navigate 
 5. Press "Send to sd"
 
 ## Demo
+
 Basic workflow example, after connecting to SD API, we get available models set the SD model and control net model then we generate first brush with txt2img and next brush with img2img
 
 [Toy Car.webm](https://github.com/user-attachments/assets/045fa68c-c8de-42b8-9da0-705c71c7b089)
@@ -26,3 +28,7 @@ Basic workflow example, after connecting to SD API, we get available models set 
 Second example, we create first brush with txt2img and next brushes with img2img
 
 [Castle Example.webm](https://github.com/user-attachments/assets/4c01a9f5-6a88-4535-aab9-72f38d84de24)
+
+Character Texturing Demo
+
+[Texture character test music.webm](https://github.com/user-attachments/assets/822b9fa6-b135-4bde-aa6e-62ed2654c044)
