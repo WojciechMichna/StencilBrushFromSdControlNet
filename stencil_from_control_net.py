@@ -302,11 +302,14 @@ class SendToControlNetOperator(bpy.types.Operator):
             if area.type == "VIEW_3D":
                 for space in area.spaces:
                     if space.type == "VIEW_3D":
-                        previous_state = space.overlay.show_overlays
+                        previous_overlays_state = space.overlay.show_overlays
+                        previous_annotation_state = space.overlay.show_annotation
                         space.overlay.show_overlays = False
+                        space.overlay.show_annotation = False
                         # Capture the viewport using OpenGL without saving to a file
                         bpy.ops.render.opengl(write_still=False, view_context=True)
-                        space.overlay.show_overlays = previous_state
+                        space.overlay.show_overlays = previous_overlays_state
+                        space.overlay.show_annotation = previous_annotation_state
 
         # Access the 'Render Result' image
         render_result = bpy.data.images.get("Render Result")
