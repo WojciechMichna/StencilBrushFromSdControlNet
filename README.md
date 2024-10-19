@@ -1,3 +1,8 @@
+<div align="center">
+  <a href="https://ko-fi.com/wojciechmichna"><img src="https://github.com/user-attachments/assets/94462bc2-46f2-4ef6-84d3-8478f8fb414a" height="50" alt="Ko-Fi Icon"></a>
+  <img width="12"></img>
+</div>
+
 # StencilBrushFromSdControlNet
 Blender plugin which creates stencil brush in texture painting mode using Stable Diffusion and control net depth model
 The plugin sends the current 3D view to the running SD instance. The 3D view is used as control net depth input to generate a new stencil brush for texture painting.
