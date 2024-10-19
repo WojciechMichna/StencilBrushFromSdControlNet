@@ -13,7 +13,6 @@ import urllib.request
 import json
 import mathutils
 import gzip
-from math import floor
 from io import BytesIO
 import base64
 
@@ -338,9 +337,6 @@ class SendToControlNetOperator(bpy.types.Operator):
             self.crop_image_to_aspect_ratio(
                 brush_tool.image_width, brush_tool.image_height, mask_path
             )
-
-            # self.crop_and_save_image(brush_tool.image_width, brush_tool.image_height, image_path)
-            # self.crop_and_save_image(brush_tool.image_width, brush_tool.image_height, mask_path)
 
         # Define the headers
         headers = {
