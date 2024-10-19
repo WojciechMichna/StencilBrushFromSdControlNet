@@ -11,14 +11,19 @@ In blender preferences in Add-ons tab chose "Install from Disk..." and navigate 
 ## Features
 -  Create a stencil brush from the current view by sending the current view to SD txt2img
 -  Create a stencil brush from the current view by sending the current view to SD img2img
+-  Add details to the current texture with inpainting by using inpainting to create the brush. With the Annotate tool select which part of the model should be inpainted and send it to inpainting with "Brush from Inpainting"
 -  Set opacity of stencil brush
 ## How to Use
+### Basic usage
 1. In Texture Paint mode open "Brush From SD" tab.
-2. Set IP of running SD instance.
+2. Set the IP of the running SD instance.
 3. Click "Get Models"
 4. Set SD model and Control Net model
 5. Press "Send to sd"
-
+### Inpainting
+1. Begin the same as in "Basic usage"
+2. With Annotate tool select parts for inpainting
+3. Press "Brush from Inpainting"
 ## Demo
 
 Basic workflow example, after connecting to SD API, we get available models set the SD model and control net model then we generate first brush with txt2img and next brush with img2img

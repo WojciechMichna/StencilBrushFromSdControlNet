@@ -11,7 +11,9 @@ import bpy
 import os
 import urllib.request
 import json
+import mathutils
 import gzip
+from math import floor
 from io import BytesIO
 import base64
 
@@ -109,7 +111,7 @@ class SdProperties(bpy.types.PropertyGroup):
         default=33,
         min=0,
         max=100,
-        update=update_brush_texture_alpha
+        update=update_brush_texture_alpha,
     )
 
 
@@ -119,6 +121,165 @@ class SendToControlNetOperator(bpy.types.Operator):
     bl_description = "Send current view to Control Net"
 
     button_id: bpy.props.StringProperty()
+
+    def crop_image_to_aspect_ratio(self, target_width, target_height, image_path):
+        """
+        Crop an image to the aspect ratio defined by target_width and target_height.
+
+        :param target_width: Desired width for aspect ratio calculation.
+        :param target_height: Desired height for aspect ratio calculation.
+        :param image_path: Path to the image file to be cropped.
+        """
+        # Calculate the desired aspect ratio
+        aspect_ratio = target_width / target_height
+
+        # Load the image
+        try:
+            img = bpy.data.images.load(image_path)
+        except:
+            print(f"Unable to load image at {image_path}")
+            return
+
+        orig_width, orig_height = img.size
+        img_aspect_ratio = orig_width / orig_height
+
+        # Get the pixel data from the image
+        pixels = list(img.pixels)
+
+        if img_aspect_ratio > aspect_ratio:
+            # Need to crop width
+            new_width = int(aspect_ratio * orig_height)
+            new_height = orig_height
+            pixels_to_remove = orig_width - new_width
+            left = int(pixels_to_remove / 2)
+
+            # Create new image
+            new_img = bpy.data.images.new(
+                "Cropped Image", width=new_width, height=new_height
+            )
+            new_pixels = [0.0] * (new_width * new_height * 4)
+
+            # Copy pixels
+            for y in range(new_height):
+                for x in range(new_width):
+                    orig_x = x + left
+                    orig_y = y
+                    orig_index = (orig_y * orig_width + orig_x) * 4
+                    new_index = (y * new_width + x) * 4
+                    new_pixels[new_index : new_index + 4] = pixels[
+                        orig_index : orig_index + 4
+                    ]
+
+        elif img_aspect_ratio < aspect_ratio:
+            # Need to crop height
+            new_height = int(orig_width / aspect_ratio)
+            new_width = orig_width
+            pixels_to_remove = orig_height - new_height
+            top = int(pixels_to_remove / 2)
+            new_img = bpy.data.images.new(
+                "Cropped Image", width=new_width, height=new_height
+            )
+            new_pixels = [0.0] * (new_width * new_height * 4)
+
+            # Copy pixels
+            for y in range(new_height):
+                orig_y = y + top
+                for x in range(new_width):
+                    orig_x = x
+                    orig_index = (orig_y * orig_width + orig_x) * 4
+                    new_index = (y * new_width + x) * 4
+                    new_pixels[new_index : new_index + 4] = pixels[
+                        orig_index : orig_index + 4
+                    ]
+
+        else:
+            # Aspect ratio matches, no need to crop
+            print("Aspect ratio matches, no cropping needed.")
+            return
+
+        # Assign pixels to new image
+        new_img.pixels = new_pixels
+
+        new_img.filepath_raw = img.filepath_raw
+        new_img.file_format = (
+            img.file_format
+        )  # Use the same format as the original image
+        bpy.data.images.remove(img)
+        new_img.save()
+        bpy.data.images.remove(new_img)
+
+    def find_center_point(self, points):
+        if not points:
+            return None
+
+        n = len(points)
+        sum_x = sum(point[0] for point in points)
+        sum_y = sum(point[1] for point in points)
+
+        center_x = sum_x / n
+        center_y = sum_y / n
+
+        return int(center_x), int(center_y)
+
+    def project_3d_to_2d(self, rv3d, coord):
+        """
+        Projects a 3D point to 2D screen space in the viewport.
+        This version uses the correct combination of the projection matrix and view matrix.
+        - region: The 3D Viewport region.
+        - rv3d: The RegionView3D (viewport's region 3D).
+        - coord: The 3D coordinate to project.
+        """
+        # World to view transformation (view_matrix)
+        view_matrix = rv3d.view_matrix
+
+        # View to projection transformation (perspective_matrix)
+        projection_matrix = rv3d.window_matrix
+
+        # Apply the full transformation (view * projection) on the 3D coordinate
+        coord_4d = view_matrix @ mathutils.Vector((coord[0], coord[1], coord[2], 1.0))
+        coord_ndc = projection_matrix @ coord_4d
+
+        # If the point is behind the camera (w <= 0), it's not visible
+        if coord_ndc.w <= 0.0:
+            return None
+
+        # Convert from homogeneous coordinates (clip space) to normalized device coordinates (NDC)
+        coord_ndc /= coord_ndc.w
+
+        # NDC coordinates range from -1 to 1, so we need to map them to screen space
+        x = int((0.5 + coord_ndc.x / 2.0) * bpy.context.scene.render.resolution_x)
+        y = int((0.5 + coord_ndc.y / 2.0) * bpy.context.scene.render.resolution_y)
+        return x, y
+
+    def annotate_to_points(self):
+        # Step 2: Get the 3D Viewport region and RegionView3D for projection
+        points_2d = []  # Store 2D points to draw red dots later
+
+        for area in bpy.context.window.screen.areas:
+            if area.type == "VIEW_3D":
+                region = None
+                for region_ in area.regions:
+                    if region_.type == "WINDOW":
+                        region = region_
+                        break
+
+                rv3d = area.spaces.active.region_3d
+
+                # Step 3: Project 3D Grease Pencil points into 2D coordinates
+                for gpencil in bpy.data.grease_pencils:
+                    for layer in gpencil.layers:
+                        for frame in layer.frames:
+                            for stroke in frame.strokes:
+                                for point in stroke.points:
+                                    # Get the 3D coordinate of the point
+                                    point_3d = point.co
+
+                                    # Project the 3D point to 2D viewport coordinates
+                                    point_2d = self.project_3d_to_2d(rv3d, point_3d)
+
+                                    if point_2d is not None:
+                                        points_2d.append(point_2d)
+        return points_2d
 
     def create_brush(self, image_path, brush_tool):
         # Ensure the image file exists
@@ -158,11 +319,28 @@ class SendToControlNetOperator(bpy.types.Operator):
 
         print("New stencil brush created and set as active.")
 
-    def send_request_to_sd(self, brush_tool, image_path):
+    def send_request_to_sd(self, brush_tool, image_path, mask_path=None):
+
+        inpainting = False
+
         if "txt2img" in self.button_id:
+            img2img = False
             url = f"http://{brush_tool.sd_api_ip}:{brush_tool.sd_api_port}/sdapi/v1/txt2img"
-        elif "img2img" in self.button_id:
+        elif "img2img" in self.button_id or "inpainting" in self.button_id:
+            img2img = True
+            inpainting = "inpainting" in self.button_id
             url = f"http://{brush_tool.sd_api_ip}:{brush_tool.sd_api_port}/sdapi/v1/img2img"
+
+        if inpainting and mask_path is not None:
+            self.crop_image_to_aspect_ratio(
+                brush_tool.image_width, brush_tool.image_height, image_path
+            )
+            self.crop_image_to_aspect_ratio(
+                brush_tool.image_width, brush_tool.image_height, mask_path
+            )
+
+            # self.crop_and_save_image(brush_tool.image_width, brush_tool.image_height, image_path)
+            # self.crop_and_save_image(brush_tool.image_width, brush_tool.image_height, mask_path)
 
         # Define the headers
         headers = {
@@ -171,12 +349,12 @@ class SendToControlNetOperator(bpy.types.Operator):
             "Content-Type": "application/json",
         }
 
-        image_path = image_path
         with open(image_path, "rb") as img_file:
             base64_image = base64.b64encode(img_file.read()).decode("utf-8")
 
         # Define the data payload
         data = {
+            "init_images": [base64_image],
             "prompt": f"{brush_tool.sd_prompt}",
             "negative_prompt": f"{brush_tool.sd_negative_prompt}",
             "sampler_name": "DPM++ 2M",
@@ -228,8 +406,31 @@ class SendToControlNetOperator(bpy.types.Operator):
             },
         }
 
-        if "img2img" in self.button_id:
+        if img2img or inpainting:
             data["init_images"] = [base64_image]
+
+        if inpainting:
+            with open(mask_path, "rb") as mask_file:
+                base64_mask = base64.b64encode(mask_file.read()).decode("utf-8")
+                data["mask"] = base64_mask
+                data["inpainting_fill"] = 1
+                data["inpaint_full_res"] = 0
+                data["inpaint_full_res_padding"] = 0
+                data["inpainting_mask_invert"] = 0
+                data["mask_blur"] = 0
+                data["alwayson_scripts"]["Soft Inpainting"] = {
+                    "args": [
+                        {
+                            "Soft inpainting": True,
+                            "Schedule bias": 1.0,
+                            "Preservation strength": 0.5,
+                            "Transition contrast boost": 4.0,
+                            "Mask influence": 0.0,
+                            "Difference threshold": 0.5,
+                            "Difference contrast": 2.0,
+                        }
+                    ]
+                }
 
         # Convert the data to JSON
         data_json = json.dumps(data).encode("utf-8")
@@ -321,25 +522,139 @@ class SendToControlNetOperator(bpy.types.Operator):
         else:
             return None
 
+    def create_mask_from_annotation(self, viewport_image_path):
+        image = bpy.data.images.load(viewport_image_path)
+        points_2d = self.annotate_to_points()
+        if len(points_2d) == 0:
+            return None
+
+        width, height = image.size
+        pixels = list(image.pixels[:])  # Copy the current pixels
+
+        for i in range(0, len(pixels), 4):
+            pixels[i] = 0.0  # R
+            pixels[i + 1] = 0.0  # G
+            pixels[i + 2] = 0.0  # B
+            pixels[i + 3] = 1.0  # A
+
+        # Function to set the pixel color at (x, y)
+        def set_pixel_t(image_pixels, x, y, width, color):
+            """Set a pixel's color in the image's pixel array"""
+            index = (
+                y * width + x
+            ) * 4  # Calculate index in flat array (4 channels: R, G, B, A)
+            image_pixels[index : index + 3] = color  # Set RGB
+            image_pixels[index + 3] = 1.0  # Set alpha to 1 (fully opaque)
+
+        # Function to draw a line between two points
+        def draw_line(image_pixels, width, height, x0, y0, x1, y1, color):
+            x0 = int(round(x0))
+            y0 = int(round(y0))
+            x1 = int(round(x1))
+            y1 = int(round(y1))
+
+            dx = abs(x1 - x0)
+            dy = -abs(y1 - y0)
+            sx = 1 if x0 < x1 else -1
+            sy = 1 if y0 < y1 else -1
+            err = dx + dy  # error value e_xy
+
+            while True:
+                if 0 <= x0 < width and 0 <= y0 < height:
+                    set_pixel_t(image_pixels, x0, y0, width, color)
+                if x0 == x1 and y0 == y1:
+                    break
+                e2 = 2 * err
+                if e2 >= dy:
+                    err += dy
+                    x0 += sx
+                if e2 <= dx:
+                    err += dx
+                    y0 += sy
+
+        # Perform flood fill starting from center_point, filling with red color
+        def flood_fill(image_pixels, x, y, width, height):
+            x = int(round(x))
+            y = int(round(y))
+
+            if not (0 <= x < width and 0 <= y < height):
+                return
+
+            stack = [(x, y)]
+            while stack:
+                x, y = stack.pop()
+                index = (y * width + x) * 4
+                current_color = image_pixels[index : index + 3]
+                if current_color == [0.0, 0.0, 0.0]:  # If the pixel is black
+                    # Set pixel to red
+                    image_pixels[index] = 1.0  # R
+                    image_pixels[index + 1] = 1.0  # G
+                    image_pixels[index + 2] = 1.0  # B
+                    image_pixels[index + 3] = 1.0  # A
+                    # Add neighboring pixels to the stack
+                    if x > 0:
+                        stack.append((x - 1, y))
+                    if x < width - 1:
+                        stack.append((x + 1, y))
+                    if y > 0:
+                        stack.append((x, y - 1))
+                    if y < height - 1:
+                        stack.append((x, y + 1))
+
+        white = [1.0, 1.0, 1.0]
+        num_points = len(points_2d)
+        for i in range(num_points):
+            x0, y0 = points_2d[i]
+            x1, y1 = points_2d[(i + 1) % num_points]  # Wrap around to the first point
+            draw_line(pixels, width, height, x0, y0, x1, y1, white)
+
+        center = self.find_center_point(points_2d)
+
+        flood_fill(pixels, center[0], center[1], width, height)
+        # Step 5: Assign modified pixels back to the image and save it
+        image.pixels[:] = pixels  # Apply the modified pixel data back to the image
+        image.filepath_raw = os.path.join(bpy.app.tempdir, "image_mask.png")
+        image.file_format = "PNG"
+        image.save()
+        ret_path = image.filepath_raw
+        bpy.data.images.remove(image)
+        return ret_path
+
     def set_texture_painting_mode(self):
         if bpy.context.active_object is not None:
             # Check if the object is a mesh
-            if bpy.context.active_object.type == 'MESH':
+            if bpy.context.active_object.type == "MESH":
                 # Switch to Texture Paint mode
-                bpy.ops.object.mode_set(mode='TEXTURE_PAINT')
+                bpy.ops.object.mode_set(mode="TEXTURE_PAINT")
             else:
                 print("Active object is not a mesh.")
+            bpy.ops.wm.tool_set_by_id(name="builtin_brush.Draw")
 
     def create_brush_from_scene(self, context):
         brush_tool = context.scene.control_net_brush_tool
 
         viewport_image_path = self.get_viewport_capture()
+
         # Check if the image exists
         if viewport_image_path is not None:
-            images = self.send_request_to_sd(brush_tool, viewport_image_path)
+            mask_image_path = None
+            if self.button_id == "create_brush_inpainting":
+                mask_image_path = self.create_mask_from_annotation(viewport_image_path)
+                if mask_image_path is None:
+                    if context.scene.control_net_brush_tool.remove_tmp_files:
+                        os.remove(viewport_image_path)
+                    self.report({"ERROR"}, "Failed to get Annotation.")
+                    return {"FINISHED"}
+
+            images = self.send_request_to_sd(
+                brush_tool, viewport_image_path, mask_image_path
+            )
+
             if len(images) > 0:
                 if context.scene.control_net_brush_tool.remove_tmp_files:
                     os.remove(viewport_image_path)
+                    if mask_image_path is not None:
+                        os.remove(mask_image_path)
                     if len(images) > 1:
                         os.remove(images[1])
                 else:
@@ -394,6 +709,8 @@ class SendToControlNetPanel(bpy.types.Panel):
         op.button_id = "create_brush_txt2img"
         op = col.operator("mesh.send_to_control_net", text="Brush from img2img")
         op.button_id = "create_brush_img2img"
+        op = col.operator("mesh.send_to_control_net", text="Brush from Inpainting")
+        op.button_id = "create_brush_inpainting"
         col.prop(brush_tool, "overlay_alpha")
 
 
